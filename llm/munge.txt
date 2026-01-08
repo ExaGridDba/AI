@@ -1,0 +1,11 @@
+/no_think
+Munge this sql statement to a 27-character lower case string without spaces or punctuation.
+The munge should be loosely based on the table name, the predicate, and the critical output columns.
+
+select u.username, u.account_status, u.expiry_date, u.profile from dba_users u where u.username = :username.
+
+Return only the 27-character string.
+Return only one word.
+No other chit-chat.
+Don't say "Okay, here's the munge"
+Only return the one-word munge.

@@ -1,0 +1,159 @@
+#!/usr/bin/env python3
+
+from argparse import ArgumentParser
+from time import time
+from icecream import ic
+from dba.ic_utl import IcUtl
+from llama_cpp import Llama
+from dba.os import Os
+from os import cpu_count
+from types import SimpleNamespace
+from os import stat
+
+
+class Chat:
+
+
+    def __init__(self):
+        self.args = None
+
+    def pars_args(self):
+        ap = ArgumentParser(description='Description of this python script')
+        ap.add_argument('--debug', '-d', action='store_true')
+        ap.add_argument('--model-file', '--gguf', '-f', required=True)
+        ap.add_argument('--verbose-load-model', action='store_true', default=False)
+        self.args = ap.parse_args()
+        IcUtl.debug(self.args)
+
+    def load_model(self):
+
+        # --batch-size 512 or --ubatch-size 512 for better batching
+        # --no-mmap if RAM is the bottleneck (forces full load into memory)
+        st = stat(self.args.model_file)
+        file_gb = round(st.st_size/1024**3, 1)
+        ic(self.args.model_file, file_gb)
+
+        if ic.enabled:
+            Os.run_free()
+
+        llama_kwargs = dict(
+            model_path=self.args.model_file,
+            n_ctx=8192,
+            n_threads=16,          # Try 8 first (common sweet spot); adjust to your physical cores
+            n_threads_batch=16,    # Match above
+            n_batch=1024,         # Higher = much faster generation on CPU
+            n_gpu_layers=0,       # CPU only
+            use_mlock=True,       # Lock in RAM if you have headroom (prevents swapping)
+            verbose=self.args.verbose_load_model
+        )
+
+        ic("loading model . . .")
+        time0 = time()
+        llm = Llama(
+            **(ic(llama_kwargs))
+        )
+        ic(". . . done loading model. elapsed %s s" % round(time() - time0))
+        ic(cpu_count())
+        self.ic_memory_info()
+        return llm
+
+    @staticmethod
+    def prompt(resp_hist, user_input):
+
+        resp_hist.append({"role": "user", "content": user_input})
+
+        full_prompt = ""
+        for msg in resp_hist:
+            if msg["role"] == "system":
+                full_prompt += f"<start_of_turn>system\n{msg['content']}<end_of_turn>\n"
+            elif msg["role"] == "user":
+                full_prompt += f"<start_of_turn>user\n{msg['content']}<end_of_turn>\n"
+            elif msg["role"] == "model":
+                full_prompt += f"<start_of_turn>model\n{msg['content']}<end_of_turn>\n"
+
+        full_prompt += "<start_of_turn>model\n"  # Start the model's turn
+        return full_prompt
+
+
+    @classmethod
+    def chat(cls, llm):
+
+        print("End your multi-line message with Ctrl-D")
+        print("Enter 'quit' to exit.")
+
+        resp_hist = [{"role": "system", "content": "You are a helpful, concise assistant."}]
+
+        llm_kwargs = dict(
+            max_tokens=512,
+            temperature=0.7,
+            stop=["<end_of_turn>"],
+            stream=True
+        )
+        ic(llm_kwargs)
+
+        while True:
+
+            user_input = ''
+            while True:
+                try:
+                    user_input += input("You: ") + '\n'
+                    if user_input.lower().strip() in ["quit", "exit"]:
+                        return
+                    elif user_input.lower().strip() in ["/nodebug"]:
+                        ic.disable()
+                except EOFError as e:
+                    break
+            ic(user_input)
+
+            full_prompt = cls.prompt(resp_hist, user_input)
+
+            time0 = time()
+            assistant_reply = ""
+
+            try:
+                ic("begin inference . . .")
+                response = llm(
+                    full_prompt,
+                    **llm_kwargs
+                )
+                print("\nAssistant... ", end="", flush=True)
+                ellips = ' ...'
+                for chunk in response:
+                    text = chunk["choices"][0]["text"]
+                    print(ellips + text, end="", flush=True)
+                    ellips = ''
+                    assistant_reply += text
+                print("\n")
+                ic(". . . streaming inference done. elapsed %s s" % round(time() - time0))
+                ic(len(assistant_reply))
+            except KeyboardInterrupt as e:
+                print()
+
+            cls.ic_memory_info()
+
+            # Add assistant reply to resp_hist
+            resp_hist.append({"role": "model", "content": assistant_reply.strip()})
+
+    @staticmethod
+    def ic_memory_info():
+            mi = Os.getpid_memoryinfo()
+            mg = SimpleNamespace(**mi._asdict())
+            for atr in mg.__dict__:
+                value = getattr(mg, atr)
+                setattr(mg, atr, round(value / 1024**3, 1))
+            ic(mg)
+
+    def run(self):
+        self.pars_args()
+        try:
+            llm = self.load_model()
+            self.chat(llm)
+            print('Exiting . . .')
+            exit(0)
+        except KeyboardInterrupt as e:
+            print('\nExiting . . .')
+            exit(1)
+
+
+if __name__ == '__main__':
+    Chat().run()
