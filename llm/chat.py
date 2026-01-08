@@ -34,7 +34,6 @@ class Chat:
         ap.add_argument('--debug', '-d', action='store_true')
         ap.add_argument('--model-file', '--gguf', '-f', required=True)
         ap.add_argument('--verbose-load-model', action='store_true', default=False)
-        # ap.add_argument('--verbose-inference', action='store_true', default=False)
         self.args = ap.parse_args()
         IcUtl.debug(self.args)
 
@@ -53,18 +52,15 @@ class Chat:
                 model_path=self.args.model_file,
                 # n_ctx=128,
                 n_ctx=2048,
-                # max_tokens = 4096,
-                # max_tokens=128,
-                n_threads=8,          # Try 8 first (common sweet spot); adjust to your physical cores
-                n_threads_batch=8,    # Match above
-                #n _batch=256,         # Higher = much faster generation on CPU
-                n_batch=128,         # Higher = much faster generation on CPU
+                n_threads=8,
+                n_threads_batch=8,
+                # n_batch=256,
+                n_batch=128,
                 n_gpu_layers=-1,      
-                use_mlock=False,       # Lock in RAM if you have headroom (prevents swapping)
+                use_mlock=False,
                 verbose=self.args.verbose_load_model
             )
             ic(llama_kwargs)
-
             ic("loading model . . .")
             time0 = time()
             sys.stderr = f
@@ -76,7 +72,6 @@ class Chat:
             ic(cpu_count())
             self.ic_memory_info()
             self.ic_vram_info()
-
 
         return llm
 
@@ -94,7 +89,7 @@ class Chat:
             elif msg["role"] == "model":
                 full_prompt += f"<start_of_turn>model\n{msg['content']}<end_of_turn>\n"
 
-        full_prompt += "<start_of_turn>model\n"  # Start the model's turn
+        full_prompt += "<start_of_turn>model\n"
         return full_prompt
 
     def chat(self, llm):
@@ -122,13 +117,10 @@ class Chat:
         ]
 
         llm_kwargs = dict(
-            # max_tokens=64,
             max_tokens=8192,
             temperature=0.7,
-            # temperature=0.0,
             stop=["<end_of_turn>", "</think>"],
             stream=True,
-            # verbose=self.args.verbose_inference
         )
         ic(llm_kwargs)
 
@@ -146,10 +138,8 @@ class Chat:
 
             full_prompt = self.prompt(resp_hist, user_input)
             ic(full_prompt)
-
             time0 = time()
             assistant_reply = ""
-
             try:
                 ic("begin inference . . .")
                 response = llm(
@@ -174,8 +164,6 @@ class Chat:
                 self.ic_vram_info()
             except KeyboardInterrupt as e:
                 print()
-
-            # Add assistant reply to resp_hist
             resp_hist.append({"role": "model", "content": assistant_reply.strip()})
 
     @staticmethod
