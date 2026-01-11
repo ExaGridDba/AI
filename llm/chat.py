@@ -51,7 +51,8 @@ class Chat:
             llama_kwargs = dict(
                 model_path=self.args.model_file,
                 # n_ctx=128,
-                n_ctx=2048,
+                n_ctx=10000,
+                # n_ctx=2048,
                 n_threads=8,
                 n_threads_batch=8,
                 # n_batch=256,
